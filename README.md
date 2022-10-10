@@ -1,2 +1,2 @@
-# personal-python-project-template
-Personal template for python project with source directory
+# broote
+General purpose python bruteforce library built on top of perock
