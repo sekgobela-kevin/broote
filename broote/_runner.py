@@ -32,10 +32,13 @@ class runner():
         failure=None,
         target_error=None,
         client_error=None,
-        opitimize=True,
+        optimize=True,
         max_retries=1,
         max_success_records=None,
-        max_multiple_primary_items=1):
+        max_primary_success_records=None,
+        max_multiple_primary_items=1,
+        compare_func=None,
+        after_attempt=None):
         self._target = target
         self._table = table
         self._session = session
@@ -47,31 +50,40 @@ class runner():
         self._target_error = target_error
         self._client_error = client_error
 
-        self._opitimize = opitimize
+        self._optimize = optimize
         self._max_retries = max_retries
 
-        self._attack_type = self.__create_attack_type()
+        self._compare_func = compare_func
+
+        self._attack_type = self._create_attack_type()
         self._runner = self._perock_runner_type(
             self._attack_type,
             self._target, 
             self._table,
-            self._opitimize,
+            self._optimize,
         )
 
         self._runner.set_max_multiple_primary_items(
             max_multiple_primary_items
         )
+        self._max_primary_success_records = max_primary_success_records
 
         if max_success_records != None:
             self._runner.set_max_success_records(max_success_records)
 
+        self._after_attempt = after_attempt
 
-    def __create_attack_type(self):
+
+    def _create_attack_type(self):
         # Creates attack class from corresponding perock attack class.
         self_ = self # Stores runner instance to use within attack.
         class attack(self_._perock_attack_type):
             def __init__(self, target, record) -> None:
                 super().__init__(target, record, self_._max_retries)
+
+            def compare(self, value):
+                print(self._responce)
+                return self_._compare_func(value, self._responce)
 
             @classmethod
             def create_session(cls):
@@ -93,28 +105,47 @@ class runner():
             
             def target_reached(self):
                 if self_._target_reached:
-                    return self_._target_reached(self._responce)
+                    if self_._compare_func:
+                        return self.compare(self_._target_reached)
+                    else:
+                        return self_._target_reached(self._responce)
                 return super().target_reached()
 
             def success(self):
                 if self_._success:
-                    return self_._success(self._responce)
+                    if self_._compare_func:
+                        return self.compare(self_._success)
+                    else:
+                        return self_._success(self._responce)
                 return super().success()
 
             def failure(self):
                 if self_._failure:
-                    return self_._failure(self._responce)
+                    if self_._compare_func:
+                        return self.compare(self_._failure)
+                    else:
+                        return self_._failure(self._responce)
                 return super().failure()
 
             def client_errors(self):
                 if self_._client_error:
-                    return self_._client_error(self._responce)
+                    if self_._compare_func:
+                        return self.compare(self_._client_error)
+                    else:
+                        return self_._client_error(self._responce)
                 return super().client_errors()
 
             def target_errors(self):
                 if self_._target_error:
-                    return self_._target_error(self._responce)
-                return super().target_errors()  
+                    if self_._compare_func:
+                        return self.compare(self_._target_error)
+                    else:
+                        return self_._target_error(self._responce)
+                return super().target_errors()
+
+            def after_request(self):
+                if self_._after_attempt:
+                    self_._after_attempt(self._data, self._responce)
         return attack
 
     def get_success_records(self):
@@ -163,12 +194,23 @@ class async_runner(parallel_runner):
         **kwargs)
         self._event_loop = None
 
-    def __create_attack_type(self):
+    def _create_attack_type(self):
         # Creates attack class from corresponding perock attack class.
         self_ = self # Stores runner instance to use within attack.
+        cmp_func_is_async = inspect.iscoroutinefunction(self_._compare_func)
+        after_attempt_async = inspect.iscoroutinefunction(
+            self_._after_attempt
+        )
         class attack_async(self_._perock_attack_type):
             def __init__(self, target, record) -> None:
                 super().__init__(target, record, self_._max_retries)
+
+            async def compare(self, value):
+                results = self_._compare_func(value, self._responce)
+                if cmp_func_is_async:
+                    return await results
+                else:
+                    return results
 
             @classmethod
             async def create_session(cls):
@@ -190,28 +232,45 @@ class async_runner(parallel_runner):
             
             async def target_reached(self):
                 if self_._target_reached:
+                    if self_._compare_func:
+                        return await self.compare(self_._target_reached)
                     return await self_._target_reached(self._responce)
                 return await super().target_reached()
 
             async def success(self):
                 if self_._success:
+                    if self_._compare_func:
+                        return await self.compare(self_._success)
                     return await self_._success(self._responce)
                 return await super().success()
 
             async def failure(self):
                 if self_._failure:
+                    if self_._compare_func:
+                        return await self.compare(self_._failure)
                     return await self_._failure(self._responce)
                 return await super().failure()
 
             async def client_errors(self):
                 if self_._client_error:
+                    if self_._compare_func:
+                        return await self.compare(self_._client_error)
                     return await self_._client_error(self._responce)
                 return await super().client_errors()
 
             async def target_errors(self):
                 if self_._target_error:
+                    if self_._compare_func:
+                        return await self.compare(self_._target_error)
                     return await self_._target_error(self._responce)
                 return await super().target_errors()  
+
+            async def after_request(self):
+                if self_._after_attempt:
+                    output = self_._after_attempt(self._data, self._responce)
+                    if self._after_attempt_async:
+                        await output
+
         return attack_async
 
     def set_event_loop(self, event_loop):
@@ -227,7 +286,6 @@ class async_runner(parallel_runner):
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                new_loop = True
                 loop = asyncio.new_event_loop()    
         loop.run_until_complete(self._runner.run())
         if not self._event_loop:
@@ -239,21 +297,24 @@ if __name__ == "__main__":
     import broote
 
     passwords_field = broote.field("password", lambda: range(10**10))
-    usernames_field = broote.field("username", ["Marry", "John", "Ben"]*50)
+    usernames_field = broote.field("username", ["Marry", "John", "Ben"])
 
     table = broote.table()
     table.add_field(passwords_field)
     table.add_primary_field(usernames_field)
 
-    async def success(response):
+    def success(response):
         # Matches Username "Ben" and Password 1
-        return ("Ben" in response) and " 1" in response
+        return ("Ben" in response) and "1" in response
 
-    async def connect(target, record):
+    def connect(target, record):
         return "Target is '{}', record is '{}'".format(target, record)
 
-    runner_ = async_runner("fake target", table, connect=connect,
+    def after(record, responce):
+        print(responce)
+
+    runner_ = basic_runner("fake target", table, connect=connect,
     max_success_records=1, max_multiple_primary_items=3, success=success,
-    max_workers=10)
+    optimize=True, after_attempt=after)
     runner_.start()
     print(runner_.get_success_records())
