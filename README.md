@@ -11,12 +11,12 @@ Broote does a good job in handling them without having to worry.
 Steps for using broote library:
 - Define bruteforce data e.g passwords or usernames.
 - Specify target to bruteforce e.g url, webpage form or file with password.
-- Define how to interact/communicate with target(creates responce).
-- Define what is considered success, failure or error based on responce.
+- Define how to interact/communicate with target(creates response).
+- Define what is considered success, failure or error based on response.
 - Start bruteforce and wait for results.
  
 Broote does not create passwords or usernames but they can be generated
-with [Brute](https://github.com/rdegges/brute).  
+with [brute](https://github.com/rdegges/brute).  
 See [perock](https://github.com/sekgobela-kevin/perock) for little more 
 about broote library.
 
@@ -34,22 +34,23 @@ Bruteforce data in broote is represented with fields, records and table.
 ```python 
 import broote
 
+# Defines field to use with table to create records.
 usernames_field = broote.field("username", ["Ben", "Jackson", "Marry"])
 passwords_field = broote.field("password", range(10))
 
+# Table contains cartesian product of fields as records.
 table = broote.table()
 table.add_primary_field(usernames_field)
-broote.add_field(passwords_field)
+table.add_field(passwords_field)
 ```
-> See [forcetable](https://github.com/sekgobela-kevin/forcetable) library for 
-more about fields, records and table.  
+> See [forcetable](https://github.com/sekgobela-kevin/forcetable) library for more about fields, records and table.  
 
 Forcetable library was integrated into broote but can be used directly 
 without problems. 
 
-Primary field is important for making bruteforce much
-faster. As above, username is expected to be tried with password until 
-there is success or run out of passwords.
+Primary field is important for making bruteforce much faster. As above, 
+username is expected to be tried with password until there is success or run 
+out of passwords.
 
 > Always provide primary field to improve performance.
 
@@ -59,7 +60,7 @@ bruteforced. That can be url to webpage, file path or any type of object.
 What matters is being able to use target to perform bruteforce.
 
 Here how we can connect/interact with target pointed by url and then
-return responce.
+return response.
 ```python
 import requests
 
@@ -71,26 +72,30 @@ def connect_webpage(target, record):
 def connect_webpage(target, record, session=None):
     # Session may be valuable to make things faster or share data.
     # session - optional session object.
-    return session.post(target, data=record)
+    if session:
+        return session.post(target, data=record)
+    else:
+        return requests.post(target, data=record)
 ```
 
 Let define success and failure functions to define what is considered
-successful or failed bruteforce.
+successful or failed bruteforce attempt.
 ```python
 import requests
 
-def success(responce):
-    return b"logged in as " in responce.content
+def success(response):
+    return b"logged in as " in response.content
 
-def failure(responce):
-    return b"Username and password does not match" in responce.content
+def failure(response):
+    return b"Username and password does not match" in response.content
 ```
 
 Runner is used to execute bruteforce and merge everything together. There
-arre different runners some of which are concurrent others running one 
+are different runners, some of which are concurrent others running one 
 after the other.
 
-`thread_runner` is used to connect/log to website to make things faster.
+`thread_runner` is used to connect/log to website to make things faster 
+by using threads.
 ```python
 import broote
 import requests
@@ -102,7 +107,7 @@ passwords_field = broote.field("password", range(10))
 # Table contains cartesian product of fields as records.
 table = broote.table()
 table.add_primary_field(usernames_field)
-broote.add_field(passwords_field)
+table.add_field(passwords_field)
 
 
 def connect_webpage(target, record, session=None):
@@ -111,11 +116,11 @@ def connect_webpage(target, record, session=None):
     # session - optional session object provided by runner.
     return requests.post(target, data=record)
 
-def success(responce):
-    return b"logged in as " in responce.content
+def success(response):
+    return b"logged in as " in response.content
 
-def failure(responce):
-    return b"Username and password does not match" in responce.content
+def failure(response):
+    return b"Username and password does not match" in response.content
 
 
 # Creates runner executing in multiple threads.
@@ -137,7 +142,9 @@ Runner is too strict when it comes to `target_reached()`, `success()`,
 ```
 Target reached - Determines if target was reached after connecting.
 Success - Determines if there was success.
+        - Target shoud be reached and no failure or error.
 Failure - Determines if attempt failed(e.g wrong password)
+
 Target error - Determines if there was error after reaching target.  
              - Target  needs to be reached as this error originates from 
                target.
@@ -149,7 +156,7 @@ Error - Determines if there was error when connecting to target.
 ```
 
 
-> Responce of `None` wont be allowed and exception object will be taken as 
+> Response of `None` wont be allowed and exception object will be taken as 
 `client error`.
 
 
@@ -161,17 +168,17 @@ def connect_webpage(target, record):
     # Record - Dict with data to pass to request.
     return requests.post(target, data=record)
 
-def target_reached(responce):
+def target_reached(response):
     return self._responce.status_code == 200
 
 def target_error(response):
-    return b"denied" in responce.content
+    return b"denied" in response.content
 
-def success(responce):
-    return b"logged in as " in responce.content
+def success(response):
+    return b"logged in as " in response.content
 
-def failure(responce):
-    return b"username and password does not match" in responce.content
+def failure(response):
+    return b"username and password does not match" in response.content
 
 
 # Creates runner executing in multiple threads.
@@ -207,7 +214,9 @@ session: Callable | Any - Callable that creates session or any object
 
 max_retries: int - Sets retries when target is not reached, default 1.
 max_success_records: int - Maximum records to match, default None.
-max_primary_success_records: int - Not currently used.
+max_primary_success_records: int - Maximim records to match for each primary 
+                                   field items.
+                                 - Not currently used.
 
 max_multiple_primary_items: int - Allows multiple primary items to be be 
                                   tried at same time.
@@ -215,19 +224,19 @@ max_multiple_primary_items: int - Allows multiple primary items to be be
                                   results.
                                 - That means multiple usernames tried at
                                   same time.
-                                - Becareful if using file field with 
-                                  'read_all' argument being False.
+                                - If using using file field, ensure 
+                                  'read_all' argument is enabled.
 
-compare_func: Callable - Influences how argumnets like 'success' gets
-                         intepreted against responce.
+compare_func: Callable - Influences how arguments like 'success' gets
+                         intepreted against response.
                        - It makes it possible to treat the as other objects
                          other than just functions.
-                       - e.g lambda: value, responce: value(responce)
+                       - e.g lambda: value, response: value(response)
 
 after_attempt: Callable - Function called after every attempt.
                         - Great performing something after connecting to
                           target including creating logs.
-                        - e.g lambda: record, responce: success(respoce)
+                        - e.g lambda: record, response: success(respoce)
 
 
 # Arguments here are available to some runners.
@@ -242,11 +251,11 @@ arguments of runner.
 def connect_webpage(target, record):
     return requests.post(target, data=record)
 
-def compare_function(value, responce):
-    return value in responce.content
+def compare_function(value, response):
+    return value in response.content
 
-def after_attack_function(record, responce):
-    if b"logged in as " in responce.content:
+def after_attack_function(record, response):
+    if b"logged in as " in response.content:
         username = record.get_item("username")
         password = record.get_item("password")
         print("Logged in as '{}' with '{}'".format(username, password))
@@ -266,24 +275,24 @@ runner = broote.thread_runner(
 ``` 
 
 
-Here is another example not using requests library with responce being
+Here is another example not using requests library with response being
 string created from record.
 ```python
-def success(responce):
-    # Matches Username "Ben" and Password 1
-    return "John" in responce and "1" in response
+def success(response):
+    # Matches Username "Ben" and with password containing '1'
+    return "Ben" in response and "1" in response
 
 def connect(target, record):
     return "Target is '{}', record is '{}'".format(target, record)
 
-def after(record, responce):
-    if success((responce):
+def after(record, response):
+    if success((response):
         print("Success:", record)
 
 runner = broote.basic_runner(
     None, 
     table, 
-    connect=connect_webpage,
+    connect=connect,
     success=success,
     after_attack=after
 )
@@ -293,9 +302,9 @@ runner = broote.basic_runner(
 Asyncio version is just similar to thread version but difference is that
 the functions passed need to be awaitable.
 ```python
-async def success(responce):
+async def success(response):
     # Matches Username "Ben" and Password 1
-    return "John" in responce and "1" in response
+    return "Ben" in response and "1" in response
 
 async def connect(target, record):
     return "Target is '{}', record is '{}'".format(target, record)
@@ -311,17 +320,17 @@ runner = broote.async_runner(
 
 # Async runner can be started just like thread runner.
 runner.start()
-# runner.astart() is awaitable compared to runner.start().
+# runner.astart() is awaitable as compared to runner.start().
 asyncio.run(runner.astart())
 ```
 
 
-Broote has capability to execute multiple runner using multi runners.  
+Broote has capability to execute multiple runners using multi runners.  
 
-That allows multiple different runners to be executed at the same time not
+That allows multiple different runners to be executed at the same time no
 matter the type of runner.
 
-Each multi runner may do things differenly than the others.
+Each multi runner may do things differenly than others.
 `multi_async_runner` will execute runners using asyncio or different 
 async thread if runner is not async.
 ```python
@@ -337,7 +346,7 @@ Type of runner does not matter to multi runners. `multi_basic_runner`
 can execute `thread_runner` or `async_runner` without problems. Multi
 runner can also be used with other multi runner just like regular runner.
 
-Multi ordinary runner is not runner and may not contain some features of 
+Multi runner is not runner and may not contain some features of 
 ordinary runner.
 
 > Remember that each runner runs independent of the others.
