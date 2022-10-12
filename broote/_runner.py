@@ -54,7 +54,11 @@ class runner():
         self._max_retries = max_retries
 
         self._compare_func = compare_func
+        self._after_attempt = after_attempt
 
+        self._max_primary_success_records = max_primary_success_records
+
+        # Dont store arguments after here.
         self._attack_type = self._create_attack_type()
         self._runner = self._perock_runner_type(
             self._attack_type,
@@ -66,12 +70,9 @@ class runner():
         self._runner.set_max_multiple_primary_items(
             max_multiple_primary_items
         )
-        self._max_primary_success_records = max_primary_success_records
 
         if max_success_records != None:
             self._runner.set_max_success_records(max_success_records)
-
-        self._after_attempt = after_attempt
 
 
     def _create_attack_type(self):
@@ -268,7 +269,7 @@ class async_runner(parallel_runner):
             async def after_request(self):
                 if self_._after_attempt:
                     output = self_._after_attempt(self._data, self._responce)
-                    if self._after_attempt_async:
+                    if after_attempt_async:
                         await output
 
         return attack_async
