@@ -83,7 +83,6 @@ class runner():
                 super().__init__(target, record, self_._max_retries)
 
             def compare(self, value):
-                print(self._responce)
                 return self_._compare_func(value, self._responce)
 
             @classmethod
@@ -91,7 +90,7 @@ class runner():
                 # Creates session object to use when connecting with target
                 if self_._session != None:
                     is_function = inspect.isfunction(self_._session)
-                    if is_function and inspect.ismethod(self_._session):
+                    if is_function or inspect.ismethod(self_._session):
                         return self_._session()
                     return self_._session
                 return super().create_session()
@@ -156,8 +155,10 @@ class runner():
         return bool(self._runner.get_success_records())
 
     def start(self):
-        return self._runner.run()
-    
+        try:
+            return self._runner.run()
+        except KeyboardInterrupt as e:
+            raise e
 
 class basic_runner(runner):
     _perock_runner_type = RunnerBlock
@@ -218,7 +219,7 @@ class async_runner(parallel_runner):
                 # Creates session object to use when connecting with target
                 if self_._session != None:
                     is_function = inspect.isfunction(self_._session)
-                    if is_function and inspect.ismethod(self_._session):
+                    if is_function or inspect.ismethod(self_._session):
                         return await self_._session()
                     return self_._session
                 return await super().create_session()
@@ -284,14 +285,13 @@ class async_runner(parallel_runner):
         if self._event_loop:
             loop = self._event_loop
         else:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = asyncio.new_event_loop()    
-        loop.run_until_complete(self._runner.run())
+            loop = asyncio.new_event_loop()    
+        # Runs coroutine/future until it completes.
+        loop.run_until_complete(self.astart())
+
+        # Event loop created in this method is closed.
         if not self._event_loop:
             loop.close()
-
 
 
 if __name__ == "__main__":
