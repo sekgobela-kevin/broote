@@ -18,6 +18,7 @@ __all__ = [
 
 
 class runner():
+    '''Performs bruteforce on records from provided table'''
     _perock_attack_type = Attack
     _perock_runner_type = RunnerBase
 
@@ -35,8 +36,10 @@ class runner():
         optimize=True,
         max_retries=1,
         max_success_records=None,
-        max_primary_success_records=None,
+        max_success_primary_items=1,
+        max_primary_success_records=1,
         max_multiple_primary_items=1,
+        excluded_primary_items=None,
         compare_func=None,
         after_attempt=None):
         self._target = target
@@ -56,7 +59,6 @@ class runner():
         self._compare_func = compare_func
         self._after_attempt = after_attempt
 
-        self._max_primary_success_records = max_primary_success_records
 
         # Dont store arguments after here.
         self._attack_type = self._create_attack_type()
@@ -67,12 +69,15 @@ class runner():
             self._optimize,
         )
 
-        self._runner.set_max_multiple_primary_items(
-            max_multiple_primary_items
-        )
+        self.set_max_multiple_primary_items(max_multiple_primary_items)
+        self.set_max_primary_success_records(max_primary_success_records)
 
-        if max_success_records != None:
-            self._runner.set_max_success_records(max_success_records)
+        if max_success_records is not None:
+            self.set_max_success_records(max_success_records)
+        if max_success_primary_items is not None:
+            self.set_max_success_primary_items(max_success_primary_items)
+        if excluded_primary_items is not None:
+            self.add_excluded_primary_items(excluded_primary_items)
 
 
     def _create_attack_type(self):
@@ -148,23 +153,108 @@ class runner():
                     self_._after_attempt(self._data, self._responce)
         return attack
 
+    def set_max_success_records(self, total):
+        '''Sets maximum success records to cancel/stop attack'''
+        self._runner.set_max_success_records(total)
+
+    def set_max_multiple_primary_items(self, total):
+        '''Set maximum primary items to execute in parrallel'''
+        self._runner.set_max_multiple_primary_items(total)
+
+    def set_max_success_primary_items(self, total):
+        '''Set maximum primary items with success record'''
+        self._runner.set_max_success_primary_items(total)
+    
+    def set_max_primary_success_records(self, total):
+        '''Set maximum success records for each primary item'''
+        self._runner.set_max_primary_item_success_records(total)
+
+    def add_excluded_primary_item(self, primary_item):
+        '''Adds primary field item to be excluded'''
+        self._runner.add_excluded_primary_items(primary_item)
+
+    def add_excluded_primary_items(self, primary_items):
+        '''Adds primary field items to be excluded'''
+        for primary_item in primary_items:
+            self.add_excluded_primary_item(primary_item)
+
+    def remove_excluded_primary_item(self, primary_item):
+        '''Removes primary field item from excluded primary field'''
+        self._runner.remove_excluded_primary_items(primary_item)
+
+
+    def get_excluded_primary_items(self):
+        '''Gets excluded primary field items'''
+        return self._runner.get_excluded_primary_items()
+
+    def get_table(self):
+        '''Gets table with records to bruteforce.'''
+        return self._runner.get_table()
+
+    def is_primary_optimised(self):
+        '''Checks primary if optimations are enabled.'''
+        return self._runner.is_primary_optimised()
+
+    def session_exists(self):
+        '''Checks if session exists'''
+        return self._runner.session_exists()
+
+    def set_session(self, session):
+        '''Sets session object to be used with runner'''
+        return self._runner.set_session(session)
+
+    def get_session(self):
+        '''Gets session object used by runner'''
+        return self._runner.get_session()
+
+    def create_session(self, *args, **kwargs):
+        '''Create session exatly as runner would create it'''
+        return self._runner.create_session(*args, **kwargs)
+
     def get_success_records(self):
+        '''Gets successfuly bruteforced records'''
         return self._runner.get_success_records()
 
     def success_exists(self):
+        '''Checks if there was success in one of records'''
         return bool(self._runner.get_success_records())
 
+
+    def get_runner_time(self):
+        '''Gets elapsed time of runner'''
+        return self._runner.get_runner_time()
+
+    def is_running(self):
+        '''Checks if runner is currently running'''
+        return self._runner.is_running()
+
+    def started(self):
+        '''Checks if runner if runner was ever started running'''
+        return self._runner.started()
+
+    def completed(self):
+        '''Checks if runner if runner completed running'''
+        return self._runner.completed()
+
+    def stop(self):
+        '''Stops runner and terminate any pending records.'''
+        return self._runner.stop()
+
     def start(self):
+        '''Starts bruteforce'''
         try:
             return self._runner.run()
         except KeyboardInterrupt as e:
             raise e
 
+
 class basic_runner(runner):
+    '''Performs bruteforce on table synchronously'''
     _perock_runner_type = RunnerBlock
 
 
 class parallel_runner(runner):
+    '''Performs bruteforce on table concurrenctly or in parallel'''
     _perock_runner_type = RunnerParallel
 
     def __init__(self, target, table, connect, max_workers=10, **kwargs):
@@ -176,6 +266,7 @@ class parallel_runner(runner):
 
 
 class executor_runner(parallel_runner):
+    '''Performs bruteforce on table using executor'''
     _perock_runner_type = RunnerExecutor
 
     def set_executor(self, executor):
@@ -184,10 +275,12 @@ class executor_runner(parallel_runner):
 
 
 class thread_runner(executor_runner):
+    '''Performs bruteforce on table using threads'''
     _perock_runner_type = RunnerThread
     
 
 class async_runner(parallel_runner):
+    '''Performs bruteforce on table using asyncronously(asyncio)'''
     _perock_attack_type = AttackAsync
     _perock_runner_type = RunnerAsync
 
@@ -272,16 +365,18 @@ class async_runner(parallel_runner):
                     output = self_._after_attempt(self._data, self._responce)
                     if after_attempt_async:
                         await output
-
         return attack_async
 
     def set_event_loop(self, event_loop):
+        '''Sets event loop to use with .start() method'''
         self._event_loop = event_loop
 
     async def astart(self):
+        '''Starts bruteforce(coroutine)'''
         await self._runner.run()
 
     def start(self):
+        '''Starts bruteforce'''
         if self._event_loop:
             loop = self._event_loop
         else:

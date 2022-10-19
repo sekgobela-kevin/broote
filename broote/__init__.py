@@ -5,4 +5,4 @@ from broote._multi_runner import *
 
 
 __name__ = "broote"
-___version__ = "0.1.0"
+___version__ = "0.2.0"
