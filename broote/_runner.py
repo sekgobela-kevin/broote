@@ -25,7 +25,7 @@ class runner():
         self,
         target,
         table,
-        connect,
+        connector,
         session=None,
         target_reached=None,
         success=None,
@@ -41,7 +41,6 @@ class runner():
         excluded_primary_items=None,
         compare_func=None,
         before_connect=None,
-        after_attempt=None,
         after_connect=None,
         response_closer=None,
         session_closer=None,
@@ -49,7 +48,7 @@ class runner():
         self._target = target
         self._table = table
         self._session = session
-        self._connector = connect
+        self._connector = connector
         self._target_reached = target_reached
 
         self._success = success
@@ -61,7 +60,7 @@ class runner():
         self._max_retries = max_retries if max_retries is not None else 0
 
         self._before_connect = before_connect
-        self._after_connect = after_connect or after_attempt
+        self._after_connect = after_connect
         self._response_closer = response_closer
         self._session_closer = session_closer
 
@@ -319,8 +318,8 @@ class parallel_runner(runner):
     _perock_runner_type = runner_mod.RunnerParallel
     _default_max_workers = 15
 
-    def __init__(self, target, table, connect, max_workers=None, **kwargs):
-        super().__init__(target, table, connect, **kwargs)
+    def __init__(self, target, table, connector, max_workers=None, **kwargs):
+        super().__init__(target, table, connector, **kwargs)
         # Setups max-workers incase it was not provided.
         if max_workers is None:
             max_workers = self._default_max_workers
@@ -349,10 +348,10 @@ class async_runner(parallel_runner):
     _perock_attack_type = attack_mod.AttackAsync
     _perock_runner_type = runner_mod.RunnerAsync
 
-    def __init__(self, target, table, connect, **kwargs):
+    def __init__(self, target, table, connector, **kwargs):
         if kwargs.get("max_workers", None) is None:
             kwargs["max_workers"] = 400
-        super().__init__(target, table, connect, **kwargs)
+        super().__init__(target, table, connector, **kwargs)
         
         # Ensures that callable attributes are awaitable.
         # Some callables may not be awaitable but they need to.
@@ -528,17 +527,18 @@ if __name__ == "__main__":
         # Matches Username "Ben" and Password 1
         return ("Ben" in response) and "1" in response
 
-    def connect(target, record):
+    def connector(target, record):
         return "Target is '{}', record is '{}'".format(target, record)
 
-    def after(record, responce):
+    def after_connect(record, responce):
         print(record)
 
     def record_transformer(record):
         return tuple(record.values())
 
-    runner_ = basic_runner("fake target", table, connect=connect,
+    runner_ = basic_runner("fake target", table, connector=connector,
     max_success_records=1, max_multiple_primary_items=3, success=success,
-    optimize=True, after_attempt=after, record_tranformer=record_transformer)
+    optimize=True, after_connect=after_connect, 
+    record_tranformer=record_transformer)
     runner_.start()
     print(runner_.get_success_records())
