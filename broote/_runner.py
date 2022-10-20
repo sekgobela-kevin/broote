@@ -225,20 +225,23 @@ class runner():
     
     def set_max_primary_success_records(self, total):
         '''Set maximum success records for each primary item'''
-        self._runner.set_max_primary_item_success_records(total)
+        self._runner.set_max_primary_success_records(total)
 
     def add_excluded_primary_item(self, primary_item):
         '''Adds primary field item to be excluded'''
-        self._runner.add_excluded_primary_items(primary_item)
+        self._runner.add_excluded_primary_item(primary_item)
 
     def add_excluded_primary_items(self, primary_items):
         '''Adds primary field items to be excluded'''
-        for primary_item in primary_items:
-            self.add_excluded_primary_item(primary_item)
+        self._runner.add_excluded_primary_items(primary_items)
 
     def remove_excluded_primary_item(self, primary_item):
-        '''Removes primary field item from excluded primary field'''
-        self._runner.remove_excluded_primary_items(primary_item)
+        '''Removes primary field item from excluded primary items'''
+        self._runner.remove_excluded_primary_item(primary_item)
+
+    def remove_excluded_primary_items(self, primary_items):
+        '''Removes primary field items from excluded primary items'''
+        self._runner.remove_excluded_primary_items(primary_items)
 
 
     def get_excluded_primary_items(self):
