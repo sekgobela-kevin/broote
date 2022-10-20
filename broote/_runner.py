@@ -1,9 +1,8 @@
-from perock.attack import *
-from perock.runner import *
+from perock import attack as attack_mod
+from perock import runner as runner_mod
+from broote import _util
 
-import inspect
 import asyncio
-from concurrent import futures
 
 
 
@@ -19,8 +18,8 @@ __all__ = [
 
 class runner():
     '''Performs bruteforce on records from provided table'''
-    _perock_attack_type = Attack
-    _perock_runner_type = RunnerBase
+    _perock_attack_type = attack_mod.Attack
+    _perock_runner_type = runner_mod.RunnerBase
 
     def __init__(    
         self,
@@ -34,18 +33,23 @@ class runner():
         target_error=None,
         client_error=None,
         optimize=True,
-        max_retries=1,
+        max_retries=None,
         max_success_records=None,
-        max_success_primary_items=1,
-        max_primary_success_records=1,
-        max_multiple_primary_items=1,
+        max_success_primary_items=None,
+        max_primary_success_records=None,
+        max_multiple_primary_items=None,
         excluded_primary_items=None,
         compare_func=None,
-        after_attempt=None):
+        before_connect=None,
+        after_attempt=None,
+        after_connect=None,
+        response_closer=None,
+        session_closer=None,
+        record_tranformer=None):
         self._target = target
         self._table = table
         self._session = session
-        self._connect = connect
+        self._connector = connect
         self._target_reached = target_reached
 
         self._success = success
@@ -54,10 +58,15 @@ class runner():
         self._client_error = client_error
 
         self._optimize = optimize
-        self._max_retries = max_retries
+        self._max_retries = max_retries if max_retries is not None else 0
 
-        self._compare_func = compare_func
-        self._after_attempt = after_attempt
+        self._before_connect = before_connect
+        self._after_connect = after_connect or after_attempt
+        self._response_closer = response_closer
+        self._session_closer = session_closer
+
+        self._record_tranformer = record_tranformer
+        self._comparer = compare_func
 
 
         # Dont store arguments after here.
@@ -69,8 +78,10 @@ class runner():
             self._optimize,
         )
 
-        self.set_max_multiple_primary_items(max_multiple_primary_items)
-        self.set_max_primary_success_records(max_primary_success_records)
+        if max_multiple_primary_items is not None:
+            self.set_max_multiple_primary_items(max_multiple_primary_items)
+        if max_primary_success_records is not None:
+            self.set_max_primary_success_records(max_primary_success_records)
 
         if max_success_records is not None:
             self.set_max_success_records(max_success_records)
@@ -78,6 +89,16 @@ class runner():
             self.set_max_success_primary_items(max_success_primary_items)
         if excluded_primary_items is not None:
             self.add_excluded_primary_items(excluded_primary_items)
+
+
+        # Performs transformation on some attributes
+        if self._session is not None:
+            if not _util.is_method_function(self._session):
+                self._session = lambda: self._session
+
+        if success is None and failure is None:
+            err_msg = "'Success' or 'Failure' is required by runner"
+            raise ValueError(err_msg)
 
 
     def _create_attack_type(self):
@@ -88,69 +109,106 @@ class runner():
                 super().__init__(target, record, self_._max_retries)
 
             def compare(self, value):
-                return self_._compare_func(value, self._responce)
+                # Defines how argument like success get compared to response
+                return self_._comparer(value, self._responce)
 
             @classmethod
             def create_session(cls):
                 # Creates session object to use when connecting with target
-                if self_._session != None:
-                    is_function = inspect.isfunction(self_._session)
-                    if is_function or inspect.ismethod(self_._session):
-                        return self_._session()
-                    return self_._session
-                return super().create_session()
+                if self_._session is not None:
+                    return _util.extract_value(self_._session)
 
             def request(self):
-                if self._session != None:
-                    responce = self_._connect(self_._target, self._data,
+                # Peforms connection to target returning response
+                if self._session is not None:
+                    responce = self_._connector(self_._target, self._data,
                     self._session)
                 else:
-                    responce = self_._connect(self_._target, self._data)
+                    responce = self_._connector(self_._target, self._data)
                 return responce
             
             def target_reached(self):
+                # Checks if target was reached
                 if self_._target_reached:
-                    if self_._compare_func:
+                    if self_._comparer:
                         return self.compare(self_._target_reached)
                     else:
                         return self_._target_reached(self._responce)
+                # Tries to guess if target was reached.
                 return super().target_reached()
 
             def success(self):
+                # Checks if there was success
                 if self_._success:
-                    if self_._compare_func:
+                    if self_._comparer:
                         return self.compare(self_._success)
                     else:
                         return self_._success(self._responce)
-                return super().success()
+                else:
+                    # Tries to guess if there is success.
+                    if self.target_reached():
+                        return not (self.target_errors() or self.failure())
+                    else:
+                        return False
 
             def failure(self):
+                # Checks if there was failure(opposite of success)
                 if self_._failure:
-                    if self_._compare_func:
+                    if self_._comparer:
                         return self.compare(self_._failure)
                     else:
                         return self_._failure(self._responce)
                 return super().failure()
 
             def client_errors(self):
+                # Checks if there was client error(likely exception)
                 if self_._client_error:
-                    if self_._compare_func:
+                    if self_._comparer:
                         return self.compare(self_._client_error)
                     else:
                         return self_._client_error(self._responce)
                 return super().client_errors()
 
             def target_errors(self):
+                # Checks if there was error after target was reached
                 if self_._target_error:
-                    if self_._compare_func:
+                    if self_._comparer:
                         return self.compare(self_._target_error)
                     else:
                         return self_._target_error(self._responce)
                 return super().target_errors()
 
+            def before_request(self):
+                # Method called before connecting to target.
+                super().before_request()
+                if self_._record_tranformer is not None:
+                    # Avoid tranforming record multiple times
+                    token = "__trans_tok_attria"
+                    if not hasattr(self, token):
+                        # Data/record is replaced by transformed one.
+                        self._data = self_._record_tranformer(self._data)
+                        setattr(self, token, False)
+                if self_._before_connect is not None:
+                    self_._before_connect(self._data, self._responce)
+
             def after_request(self):
-                if self_._after_attempt:
-                    self_._after_attempt(self._data, self._responce)
+                # Method called after connecting to target.
+                super().after_request()
+                if self_._after_connect:
+                    self_._after_connect(self._data, self._responce)
+
+            @classmethod
+            def close_session(cls, session):
+                # Closes session object to free resources
+                if self_._session_closer is not None:
+                    self_._session_closer(session)
+
+            @classmethod
+            def close_responce(cls, response):
+                # Closes response object to free resources
+                if self_._response_closer is not None:
+                    self_._response_closer(response)
+
         return attack
 
     def set_max_success_records(self, total):
@@ -250,15 +308,19 @@ class runner():
 
 class basic_runner(runner):
     '''Performs bruteforce on table synchronously'''
-    _perock_runner_type = RunnerBlock
+    _perock_runner_type = runner_mod.RunnerBlock
 
 
 class parallel_runner(runner):
     '''Performs bruteforce on table concurrenctly or in parallel'''
-    _perock_runner_type = RunnerParallel
+    _perock_runner_type = runner_mod.RunnerParallel
+    _default_max_workers = 15
 
-    def __init__(self, target, table, connect, max_workers=10, **kwargs):
+    def __init__(self, target, table, connect, max_workers=None, **kwargs):
         super().__init__(target, table, connect, **kwargs)
+        # Setups max-workers incase it was not provided.
+        if max_workers is None:
+            max_workers = self._default_max_workers
         # Number of workers should match number of paralel tasks.
         # This can improve performance(especially waiting for tasks)
         self._runner.set_max_workers(max_workers)
@@ -267,7 +329,7 @@ class parallel_runner(runner):
 
 class executor_runner(parallel_runner):
     '''Performs bruteforce on table using executor'''
-    _perock_runner_type = RunnerExecutor
+    _perock_runner_type = runner_mod.RunnerExecutor
 
     def set_executor(self, executor):
         '''Sets executor to use to execute tasks'''
@@ -276,95 +338,155 @@ class executor_runner(parallel_runner):
 
 class thread_runner(executor_runner):
     '''Performs bruteforce on table using threads'''
-    _perock_runner_type = RunnerThread
+    _perock_runner_type = runner_mod.RunnerThread
     
 
 class async_runner(parallel_runner):
     '''Performs bruteforce on table using asyncronously(asyncio)'''
-    _perock_attack_type = AttackAsync
-    _perock_runner_type = RunnerAsync
+    _perock_attack_type = attack_mod.AttackAsync
+    _perock_runner_type = runner_mod.RunnerAsync
 
-    def __init__(self, target, table, connect, max_workers=200, **kwargs):
-        super().__init__(target, table, connect, max_workers=max_workers,
-        **kwargs)
+    def __init__(self, target, table, connect, **kwargs):
+        if kwargs.get("max_workers", None) is None:
+            kwargs["max_workers"] = 400
+        super().__init__(target, table, connect, **kwargs)
+        
+        # Ensures that callable attributes are awaitable.
+        # Some callables may not be awaitable but they need to.
+        if _util.is_method_function(self._after_connect):
+            self._after_connect = _util.to_coroutine_function(
+                self._after_connect)
+
+        if _util.is_method_function(self._before_connect):
+            self._before_connect = _util.to_coroutine_function(
+                self._before_connect)
+
+        if _util.is_method_function(self._session):
+            self._session = _util.to_coroutine_function(self._session)
+
+        if _util.is_method_function(self._comparer):
+            self._comparer = _util.to_coroutine_function(
+                self._comparer)
+
+        if _util.is_method_function(self._session_closer):
+            self._session_closer = _util.to_coroutine_function(
+                self._session_closer)
+
+        if _util.is_method_function(self._response_closer):
+            self._response_closer = _util.to_coroutine_function(
+                self._response_closer)
+
+        if _util.is_method_function(self._record_tranformer):
+            self._record_tranformer = _util.to_coroutine_function(
+                self._record_tranformer)
+
         self._event_loop = None
+
 
     def _create_attack_type(self):
         # Creates attack class from corresponding perock attack class.
         self_ = self # Stores runner instance to use within attack.
-        cmp_func_is_async = inspect.iscoroutinefunction(self_._compare_func)
-        after_attempt_async = inspect.iscoroutinefunction(
-            self_._after_attempt
-        )
         class attack_async(self_._perock_attack_type):
             def __init__(self, target, record) -> None:
                 super().__init__(target, record, self_._max_retries)
 
             async def compare(self, value):
-                results = self_._compare_func(value, self._responce)
-                if cmp_func_is_async:
-                    return await results
-                else:
-                    return results
+                # Defines how argument like success get compared to response
+                return await self_._comparer(value, self._responce)
 
             @classmethod
             async def create_session(cls):
                 # Creates session object to use when connecting with target
-                if self_._session != None:
-                    is_function = inspect.isfunction(self_._session)
-                    if is_function or inspect.ismethod(self_._session):
-                        return await self_._session()
-                    return self_._session
-                return await super().create_session()
+                if self_._session is not None:
+                    return await self_._session()
 
             async def request(self):
-                if self._session != None:
-                    responce = await self_._connect(self_._target, 
+                # Connects to target and returns response.
+                if self._session is not None:
+                    responce = await self_._connector(self_._target, 
                     self._data, self._session)
                 else:
-                    responce = await self_._connect(self_._target, self._data)
+                    responce = await self_._connector(self_._target, self._data)
                 return responce
             
             async def target_reached(self):
-                if self_._target_reached:
-                    if self_._compare_func:
+                # Checks if target was reached.
+                if self_._target_reached is not None:
+                    if self_._comparer:
                         return await self.compare(self_._target_reached)
                     return await self_._target_reached(self._responce)
                 return await super().target_reached()
 
             async def success(self):
-                if self_._success:
-                    if self_._compare_func:
+                # Checks if there was success.
+                if self_._success is not None:
+                    if self_._comparer:
                         return await self.compare(self_._success)
                     return await self_._success(self._responce)
-                return await super().success()
+                else:
+                    # Tries to guess if there was success.
+                    # .failure() should not use .success()(avoid recursion)
+                    if await self.target_reached():
+                        if await self.failure():
+                            return False
+                        elif await self.target_errors():
+                            return False
+                    return False
 
             async def failure(self):
-                if self_._failure:
-                    if self_._compare_func:
+                # Checks if target was failure(opposite of success)
+                if self_._failure is not None:
+                    if self_._comparer:
                         return await self.compare(self_._failure)
                     return await self_._failure(self._responce)
                 return await super().failure()
 
             async def client_errors(self):
-                if self_._client_error:
-                    if self_._compare_func:
+                # Checks if there client error(likely exception response).
+                if self_._client_error is not None:
+                    if self_._comparer:
                         return await self.compare(self_._client_error)
                     return await self_._client_error(self._responce)
                 return await super().client_errors()
 
             async def target_errors(self):
-                if self_._target_error:
-                    if self_._compare_func:
+                # Checks if there was error after reaching target.
+                if self_._target_error is not None:
+                    if self_._comparer:
                         return await self.compare(self_._target_error)
                     return await self_._target_error(self._responce)
                 return await super().target_errors()  
 
+            async def before_request(self):
+                # Checks if there was error after reaching target.
+                await super().before_request()
+                if self_._record_tranformer is not None:
+                    # Avoid tranforming record multiple times
+                    token = "__trans_tok_attria"
+                    if not hasattr(self, token):
+                        # Data/record is replaced by transformed one.
+                        self._data = await self_._record_tranformer(
+                            self._data)
+                        setattr(self, token, False)
+                if self_._before_connect is not None:
+                    # Realise that record/data is overiden.
+                    await self_._before_connect(self._data)
+
             async def after_request(self):
-                if self_._after_attempt:
-                    output = self_._after_attempt(self._data, self._responce)
-                    if after_attempt_async:
-                        await output
+                # Method called after connecting to target.
+                await super().after_request()
+                if self_._after_connect is not None:
+                   await self_._after_connect(self._data, self._responce)
+
+            @classmethod
+            async def close_session(cls, session):
+                if self_._session_closer is not None:
+                    await self_._session_closer(session)
+
+            @classmethod
+            async def close_responce(cls, response):
+                if self_._response_closer is not None:
+                    await self_._response_closer(response)
         return attack_async
 
     def set_event_loop(self, event_loop):
@@ -407,10 +529,13 @@ if __name__ == "__main__":
         return "Target is '{}', record is '{}'".format(target, record)
 
     def after(record, responce):
-        print(responce)
+        print(record)
+
+    def record_transformer(record):
+        return tuple(record.values())
 
     runner_ = basic_runner("fake target", table, connect=connect,
     max_success_records=1, max_multiple_primary_items=3, success=success,
-    optimize=True, after_attempt=after)
+    optimize=True, after_attempt=after, record_tranformer=record_transformer)
     runner_.start()
     print(runner_.get_success_records())
