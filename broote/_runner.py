@@ -93,7 +93,7 @@ class runner():
         # Performs transformation on some attributes
         if self._session is not None:
             if not _util.is_method_function(self._session):
-                self._session = lambda: self._session
+                self._session = lambda: session
 
         if success is None and failure is None:
             err_msg = "'Success' or 'Failure' is required by runner"
