@@ -234,7 +234,7 @@ max_multiple_primary_items: int - Allows multiple primary items to be be
 
 excluded_primary_items: Iterable - Primary items to be excluded.
 
-compare_func: Callable - Influences how arguments like 'success' gets
+comparer: Callable - Influences how arguments like 'success' gets
                          intepreted against response.
                        - It makes it possible to treat the as other objects
                          other than just functions.
@@ -251,13 +251,13 @@ session_closer: Callable - Function for closing session.
 ```
 
 
-This simple code shows ways of using `compare_func` and `after_attempt`
+This simple code shows ways of using `comparer` and `after_attempt`
 arguments of runner.
 ```python
 def connector(target, record):
     return requests.post(target, data=record)
 
-def compare_function(value, response):
+def comparer(value, response):
     return value in response.content
 
 def after_connect(record, response):
@@ -276,7 +276,7 @@ runner = broote.thread_runner(
     success=b"logged in as ", 
     failure=b"username and password does not match", 
     target_error=b"denied",
-    compare_func=compare_function
+    comparer=comparer
 )
 ``` 
 
