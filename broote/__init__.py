@@ -3,6 +3,8 @@ from forcetable import *
 from broote._runner import *
 from broote._multi_runner import *
 
+from broote import exceptions
+
 # Setups __all__ containing public symbols and non modules symbols.
 # This excludes modules from being imported when importing with 'import *'.
 import types
@@ -14,4 +16,4 @@ __all__ = [
 del types
 
 __name__ = "broote"
-___version__ = "0.4.1"
+___version__ = "0.5.0"

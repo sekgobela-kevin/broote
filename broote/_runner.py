@@ -44,7 +44,7 @@ class runner():
         after_connect=None,
         response_closer=None,
         session_closer=None,
-        record_tranformer=None):
+        record_transformer=None):
         self._target = target
         self._table = table
         self._session = session
@@ -64,7 +64,7 @@ class runner():
         self._response_closer = response_closer
         self._session_closer = session_closer
 
-        self._record_tranformer = record_tranformer
+        self._record_transformer = record_transformer
         self._comparer = compare_func
 
 
@@ -180,12 +180,12 @@ class runner():
             def before_request(self):
                 # Method called before connecting to target.
                 super().before_request()
-                if self_._record_tranformer is not None:
+                if self_._record_transformer is not None:
                     # Avoid tranforming record multiple times
                     token = "__trans_tok_attria"
                     if not hasattr(self, token):
                         # Data/record is replaced by transformed one.
-                        self._data = self_._record_tranformer(self._data)
+                        self._data = self_._record_transformer(self._data)
                         setattr(self, token, False)
                 if self_._before_connect is not None:
                     self_._before_connect(self._data, self._responce)
@@ -378,9 +378,9 @@ class async_runner(parallel_runner):
             self._response_closer = _util.to_coroutine_function(
                 self._response_closer)
 
-        if _util.is_method_function(self._record_tranformer):
-            self._record_tranformer = _util.to_coroutine_function(
-                self._record_tranformer)
+        if _util.is_method_function(self._record_transformer):
+            self._record_transformer = _util.to_coroutine_function(
+                self._record_transformer)
 
         self._event_loop = None
 
@@ -462,12 +462,12 @@ class async_runner(parallel_runner):
             async def before_request(self):
                 # Checks if there was error after reaching target.
                 await super().before_request()
-                if self_._record_tranformer is not None:
+                if self_._record_transformer is not None:
                     # Avoid tranforming record multiple times
                     token = "__trans_tok_attria"
                     if not hasattr(self, token):
                         # Data/record is replaced by transformed one.
-                        self._data = await self_._record_tranformer(
+                        self._data = await self_._record_transformer(
                             self._data)
                         setattr(self, token, False)
                 if self_._before_connect is not None:
@@ -539,6 +539,6 @@ if __name__ == "__main__":
     runner_ = basic_runner("fake target", table, connector=connector,
     max_success_records=1, max_multiple_primary_items=3, success=success,
     optimize=True, after_connect=after_connect, 
-    record_tranformer=record_transformer)
+    record_transformer=record_transformer)
     runner_.start()
     print(runner_.get_success_records())
