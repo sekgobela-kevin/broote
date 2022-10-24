@@ -64,12 +64,12 @@ return response.
 ```python
 import requests
 
-def connect_webpage(target, record):
+def connector(target, record):
     # target - url to webpage.
     # record - Dict like object with data to pass to request
     return requests.post(target, data=record)
 
-def connect_webpage(target, record, session=None):
+def connector(target, record, session=None):
     # Session may be valuable to make things faster or share data.
     # session - optional session object.
     if session:
@@ -110,7 +110,7 @@ table.add_primary_field(usernames_field)
 table.add_field(passwords_field)
 
 
-def connect_webpage(target, record, session=None):
+def connector(target, record, session=None):
     # target - url to webpage.
     # record - Dict with data to pass to request.
     # session - optional session object provided by runner.
@@ -125,9 +125,9 @@ def failure(response):
 
 # Creates runner executing in multiple threads.
 target = "https://example.com/login"
-runner = broote.thread_runner(target, table, connect=connect_webpage,success=success, failure=failure)
+runner = broote.thread_runner(target, table, connector=connector,success=success, failure=failure)
 
-# Starts bruteforce into target as defined by connect_webpage().
+# Starts bruteforce into target as defined by connector().
 runner.start()
 runner.get_success_records() # [{'username': 'Marry', 'password': 8}]
 ```
@@ -163,13 +163,13 @@ Error - Determines if there was error when connecting to target.
 This shows runner with more functions like `target_reached()` and 
 `target_error()` which are also important.
 ```python
-def connect_webpage(target, record):
+def connector(target, record):
     # Target - url to webpage.
     # Record - Dict with data to pass to request.
     return requests.post(target, data=record)
 
 def target_reached(response):
-    return self._responce.status_code == 200
+    return response.status_code == 200
 
 def target_error(response):
     return b"denied" in response.content
@@ -186,14 +186,14 @@ target = "https://example.com/login"
 runner = broote.thread_runner(
     target, 
     table, 
-    connect=connect_webpage,
+    connector=connector,
     target_reached=target_reached, 
     success=success, 
     failure=failure, 
-    target_error=target_errror
+    target_error=target_error
 )
 
-# Starts bruteforce into target as defined by connect_webpage().
+# Starts bruteforce into target as defined by connector().
 runner.start()
 runner.get_success_records() # [{'username': 'Marry', 'password': 8}]
 ```
@@ -212,11 +212,16 @@ session: Callable | Any - Callable that creates session or any object
                         - It may sometimes be better to share certain
                           object e.g session for web request.
 
+
+# broote.basic_runner does not support 'max_workers' argument.
+max_workers: int - Sets maximum workers execute bruteforce, default=10.
+                 - Only supported by concurrent runners.
+
 max_retries: int - Sets retries when target is not reached, default 1.
 max_success_records: int - Maximum records to match, default None.
 max_primary_success_records: int - Maximim records to match for each primary 
                                    field items.
-                                 - Not currently used.
+max_success_primary_items: int - Maximum primary items with success records.
 
 max_multiple_primary_items: int - Allows multiple primary items to be be 
                                   tried at same time.
@@ -227,34 +232,35 @@ max_multiple_primary_items: int - Allows multiple primary items to be be
                                 - If using using file field, ensure 
                                   'read_all' argument is enabled.
 
+excluded_primary_items: Iterable - Primary items to be excluded.
+
 compare_func: Callable - Influences how arguments like 'success' gets
                          intepreted against response.
                        - It makes it possible to treat the as other objects
                          other than just functions.
                        - e.g lambda: value, response: value(response)
 
-after_attempt: Callable - Function called after every attempt.
+after_connect - Callable - Function called before connecting to target.
+after_connect: Callable - Function called after connecting to target.
                         - Great performing something after connecting to
                           target including creating logs.
                         - e.g lambda: record, response: success(respoce)
 
-
-# Arguments here are available to some runners.
-max_workers: int - Sets maximum workers execute bruteforce, default=10.
-                 - Only supported by concurrent runners.
+response_closer: Callable - Function for closing response.
+session_closer: Callable - Function for closing session.
 ```
 
 
 This simple code shows ways of using `compare_func` and `after_attempt`
 arguments of runner.
 ```python
-def connect_webpage(target, record):
+def connector(target, record):
     return requests.post(target, data=record)
 
 def compare_function(value, response):
     return value in response.content
 
-def after_attack_function(record, response):
+def after_connect(record, response):
     if b"logged in as " in response.content:
         username = record.get_item("username")
         password = record.get_item("password")
@@ -265,7 +271,7 @@ target = "https://example.com/login"
 runner = broote.thread_runner(
     target, 
     table, 
-    connect=connect_webpage,
+    connector=connector,
     target_reached=b"example.com", 
     success=b"logged in as ", 
     failure=b"username and password does not match", 
@@ -282,19 +288,19 @@ def success(response):
     # Matches Username "Ben" and with password containing '1'
     return "Ben" in response and "1" in response
 
-def connect(target, record):
+def connector(target, record):
     return "Target is '{}', record is '{}'".format(target, record)
 
 def after(record, response):
-    if success((response):
+    if success(response):
         print("Success:", record)
 
 runner = broote.basic_runner(
     None, 
     table, 
-    connect=connect,
+    connector=connector,
     success=success,
-    after_attack=after
+    after_connect=after
 )
 ```
 > `broote.basic_runner` is not concurrent(attempts wait for each other).
@@ -306,14 +312,14 @@ async def success(response):
     # Matches Username "Ben" and Password 1
     return "Ben" in response and "1" in response
 
-async def connect(target, record):
+async def connector(target, record):
     return "Target is '{}', record is '{}'".format(target, record)
 
 
 runner = broote.async_runner(
     None, 
     table, 
-    connect=connect_webpage,
+    connector=connector,
     success=success,
     max_workers=400
 )
