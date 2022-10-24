@@ -16,4 +16,4 @@ __all__ = [
 del types
 
 __name__ = "broote"
-___version__ = "0.5.0"
+___version__ = "0.6.0"

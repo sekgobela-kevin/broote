@@ -39,7 +39,7 @@ class runner():
         max_primary_success_records=None,
         max_multiple_primary_items=None,
         excluded_primary_items=None,
-        compare_func=None,
+        comparer=None,
         before_connect=None,
         after_connect=None,
         response_closer=None,
@@ -65,7 +65,7 @@ class runner():
         self._session_closer = session_closer
 
         self._record_transformer = record_transformer
-        self._comparer = compare_func
+        self._comparer = comparer
 
 
         # Dont store arguments after here.
