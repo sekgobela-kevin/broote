@@ -1,2 +1,3 @@
 perock>=0.0.4
+requests
 -e .
