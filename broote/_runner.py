@@ -257,19 +257,15 @@ class runner():
 
     def session_exists(self):
         '''Checks if session exists'''
-        return self._runner.session_exists()
+        return self._session != None
 
     def set_session(self, session):
         '''Sets session object to be used with runner'''
-        return self._runner.set_session(session)
+        self._session = session
 
     def get_session(self):
         '''Gets session object used by runner'''
-        return self._runner.get_session()
-
-    def create_session(self, *args, **kwargs):
-        '''Create session exatly as runner would create it'''
-        return self._runner.create_session(*args, **kwargs)
+        return self._session
 
     def get_success_records(self):
         '''Gets successfuly bruteforced records'''
@@ -367,8 +363,7 @@ class async_runner(parallel_runner):
             self._session = _util.to_coroutine_function(self._session)
 
         if _util.is_method_function(self._comparer):
-            self._comparer = _util.to_coroutine_function(
-                self._comparer)
+            self._comparer = _util.to_coroutine_function(self._comparer)
 
         if _util.is_method_function(self._session_closer):
             self._session_closer = _util.to_coroutine_function(
@@ -472,7 +467,7 @@ class async_runner(parallel_runner):
                         setattr(self, token, False)
                 if self_._before_connect is not None:
                     # Realise that record/data is overiden.
-                    await self_._before_connect(self._data)
+                    await self_._before_connect(self._target, self._data)
 
             async def after_request(self):
                 # Method called after connecting to target.
